@@ -2,6 +2,15 @@ import numpy as np
 import scanpy as sc
 import pandas as pd
 import anndata as ad
+import pertpy as pt
+import matplotlib.pyplot as plt
+
+def plt_legend(x=None, y=None):
+    if not x:
+        x = 1.01
+    if not y:
+        y = 1.03
+    plt.legend(bbox_to_anchor=(x, y))
 
 def annotate(adata, params):
     """Adds metadata annotations and a 'perturbation' column to SplatteR simulated data."""
@@ -12,7 +21,6 @@ def annotate(adata, params):
     adata.obs['log(DEProb)'] = np.log10(adata.obs.DEProb.values)
     adata.obs['perturbation'] = adata.obs.Group.replace({'Path1': 'control'})
 
-
 def scanpy_setup(adata):
     """In-place."""
     adata.layers['counts'] = adata.X.copy()
@@ -20,6 +28,8 @@ def scanpy_setup(adata):
     sc.pp.log1p(adata)
     sc.pp.highly_variable_genes(adata, n_top_genes=5000)
     sc.pp.pca(adata, use_highly_variable=True)
+    adata.obs_names_make_unique()
+    adata.var_names_make_unique()
 
 def ctrl_categories_setup(adata, resolution):
     """In-place."""
@@ -34,7 +44,7 @@ def ctrl_categories_setup(adata, resolution):
     adata.obs['leiden'][ctrl_adata.obs.index] = ctrl_adata.obs['leiden'].values
 
 ### Sampling and evaluation-specific utlities ###
-def sample_and_merge_control(adata, control, n=5):
+def sample_and_merge_control(adata, control_key, n=5):
     """
     Merge `n` control groups determined using leiden into the original adata,
     labeled under `'perturbation'`.
@@ -42,17 +52,51 @@ def sample_and_merge_control(adata, control, n=5):
     Parameters
     ----------
     adata : AnnData
-    control : AnnData
-        Control dataset in AnnData format with 'leiden' clustering labels.
     n : int, optional
         Number of control categories (leiden clusters) to merge (default is 5).
     """
+    control = adata[adata.obs.perturbation == control_key]
     control.obs['perturbation'] = control.obs['perturbation'].astype(str)
     for cat in range(n):
         idx = control[control.obs.leiden == str(cat)].obs.index
-        control.obs['perturbation'][idx] = 'control' + str(cat)
+        control.obs['perturbation'][idx] = control_key + str(cat)
         
-    return ad.concat([adata, control], join='outer')
+    return ad.concat([adata[adata.obs.perturbation != control_key], control], join='outer')
+
+def sample_and_merge_control_random(adata, control_key_or_indices, n=5):
+    """
+    Randomly sample control data and merge it with the original dataset.
+
+    Parameters
+    ----------
+    adata : anndata.AnnData
+        Anndata dataset with `'perturbation'` in .obs.
+    n : int (default: 5)
+        Number of control categories to split and merge.
+
+    Returns
+    -------
+    anndata.AnnData
+        A new Anndata dataset with the sampled control data merged into the original dataset.
+        The `perturbation` column is updated to mark which are the sampled cells.
+    """
+    if type(control_key_or_indices) is str:
+        control = adata[adata.obs.perturbation == control_key_or_indices]
+    else:
+        control = adata[control_key_or_indices]
+    indices = list(control.obs.index)
+    np.random.shuffle(indices)
+
+    # floor division and relabel
+    n_per_control = control.shape[0] // n
+    new = control[indices[:n_per_control*n]]  # equivalent to shuffling the control cells
+    new_label = []
+    for i in range(n):
+        new_label += [f'control{i}']*n_per_control
+    new.obs['perturbation'] = new_label
+
+    no_ctrl = adata[~adata.obs_names.isin(control.obs_names)]
+    return ad.concat([no_ctrl, new], join="outer")
 
 def remove_groups(adata, min_cells):
     """
@@ -101,8 +145,8 @@ def generate(cond, train, min_cells=500):
 
     Parameters
     ----------
-    cond : list
-        A list of integers representing different experimental scenarios (number of cells to subsample).
+    cond : int
+        Integer representing number of cells to subsample.
     train : anndata.AnnData
         The input Anndata dataset containing all conditions + `control`. Must have a column in `.obs`
         named `'perturbation'`
@@ -127,9 +171,61 @@ def generate(cond, train, min_cells=500):
 
     return new_train
 
-def get_flat_df(pwdfs, controls, label='condi'):
+def inplace_check(metrics, results, res, recompute=False):
+    if res.res_string in results and not recompute:
+        res = results[res.res_string]
+
+    res.compute_pwdf(metrics, recompute=recompute)
+    results[res.res_string] = res
+
+## Calculating pairwise dfs
+def get_pwdf_per_condition(target_adata, metrics, cond_label, rep='pca'):
     """
-    Transform a dictionary of pairwise distance dataframes into a flat dataframe.
+    Computes a pwdf dict where keys are a description of the settings.
+    Always computes on ALL features of the `target_adata` that is passed in.
+
+    Parameters:
+    -----------
+    target_adata : AnnData
+    metrics : list
+        A list of distance metrics to compute pairwise distances betewen conditions.
+    cond_label : str
+        A label to identify the condition in the resulting DataFrames.
+        Does not contain the metric name.
+    rep : str (default, pca)
+        The data representation to use ('pca', 'lognorm', or 'counts').
+    """
+    dfs = {}
+    for metric in metrics:
+        if rep == 'pca':
+            sc.pp.pca(target_adata, use_highly_variable=False)  # rerun PCA in case the number of features has changed
+            distance = pt.tools.Distance(metric=metric)
+        elif rep == 'lognorm':
+            try:  # sparse
+                target_adata.layers['lognorm'] = target_adata.X.A
+            except AttributeError:
+                target_adata.layers['lognorm'] = np.asarray(target_adata.X)
+            distance = pt.tools.Distance(metric=metric, layer_key='lognorm')
+        elif rep == 'counts':
+            distance = pt.tools.Distance(metric=metric, layer_key='counts')
+        else:
+            raise ValueError('`rep` must be one of pca, lognorm, or counts.')
+
+        # do something completely different when evaluating only on DEGs
+        if cond_label == 'n_DEGs':
+            dfs[metric + '-' + str(cond_label)] = calc_DEG_pwdf(target_adata, distance)
+            continue
+
+        pwdf = distance.pairwise(target_adata, groupby='perturbation')
+        dfs[metric + '-' + str(cond_label)] = pwdf
+
+    return dfs
+
+## Plotting
+def get_flat_df(pwdfs, controls=None, label='condi'):
+    """
+    Transform a dictionary of pairwise distance dataframes into a flat dataframe,
+    averaged per control condition (versus across - see get_melted_df_per_perturbation).
 
     Parameters:
     -----------
@@ -148,6 +244,8 @@ def get_flat_df(pwdfs, controls, label='condi'):
     res_dict = {"avg_dist": [], "metric": [], label: []}
 
     for metric_condi, pwdf in pwdfs.items():
+        if controls is None:
+            controls = [x for x in pwdf.columns if 'control' in x]
 
         # average distance per control = source of variation
         ctrl_stim = pwdf.loc[controls, :]
@@ -155,11 +253,11 @@ def get_flat_df(pwdfs, controls, label='condi'):
         avg_dists = ctrl_stim.mean(1).values
 
         res_dict["avg_dist"].append(avg_dists)
-        res_dict["metric"].append(metric_condi.split('_')[0])
+        res_dict["metric"].append(metric_condi.split('-')[0])
         try:
-            res_dict[label].append(int(metric_condi.split('_')[1]))
+            res_dict[label].append(int(metric_condi.split('-')[1]))
         except ValueError:  # not an integer
-            res_dict[label].append(metric_condi.split('_')[1])
+            res_dict[label].append(metric_condi.split('-')[1])
 
     df = pd.DataFrame.from_dict(res_dict)
 
@@ -189,7 +287,7 @@ def normalize_per_metric(melted_df, label='avg_dist'):
     
     return df
 
-def get_distance_per_perturbation(pwdfs, cond_name, metrics, controls):
+def get_distance_per_perturbation(pwdfs, metrics, controls, label='condi'):
     """
     Return the distances per perturbation, averaged over controls.
 
@@ -197,8 +295,6 @@ def get_distance_per_perturbation(pwdfs, cond_name, metrics, controls):
     ----------
     pwdfs : dict
         A dictionary containing pairwise distance DataFrames for different metrics.
-    cond_name : str
-        Name of the experimental condition or dataset to subset to.
 
     Returns
     -------
@@ -206,33 +302,36 @@ def get_distance_per_perturbation(pwdfs, cond_name, metrics, controls):
         A list of DataFrames, each containing average distances for perturbations with a 'metric' column.
         The second return value is a dictionary with control-to-control average distances for each metric.
     """
-    dfs = []
-    ctrls = {}
-    for metric in metrics:
-        try:
-            pwdf = pwdfs[f'{metric}_{cond_name}']
-        except KeyError:  # maybe some didn't run through
-            continue
-
-        # Get average distance of control to control (exclude diagonal)
-        ctrl_ctrl = pwdf.loc[controls, controls]
-        ctrl_dist = ctrl_ctrl.sum().sum() / (25 - 5) 
-        ctrls[metric] = ctrl_dist
-
-        print("control:", ctrl_dist)
+    dfs = {}
+    for key, pwdf in pwdfs.items():
+        metric = key.split('-')[0]
+        cond_name = key.split('-')[1]
 
         # Get average distance across controls per perturbation
         ctrl_stim = pwdf.loc[controls, :].drop(controls, axis=1)
         distances = pd.DataFrame(ctrl_stim.mean(0))
 
-        distances['metric'] = metric
-        dfs.append(distances)
-        
-    return dfs, ctrls
+        # Get average distance of control to control (exclude diagonal) and add to dataframe
+        ctrl_ctrl = pwdf.loc[controls, controls]
+        ctrl_mean = ctrl_ctrl.replace(0, np.NaN).mean()
+        distances = pd.concat([distances, pd.DataFrame(ctrl_mean)])
 
-def add_rank_col(df, single_metric_df):
-    """In-place."""
-    # rank the perturbations using one of the distances (edist in this case), and then plot all distances by that ranking
+        # add overall control mean to dataframe
+        distances.loc['control'] = [ctrl_mean.mean()]
+#        print(f"avg ctrl dist for {metric}-{cond_name}:", ctrl_dist)
+
+        distances['metric'] = metric
+        distances[label] = cond_name
+        dfs[key] = distances
+        
+    return dfs
+
+def add_rank_col(df, single_metric_df, sort_per_control=True):
+    """In-place. Rank the perturbations using the first distance's dataframe.
+    Dataframes may be the same, but `df` must still be formatted properly.
+
+    Control rankings are assigned without counting other controls as conditions.
+    """
     rank_df = single_metric_df.sort_values(by=0).reset_index().reset_index()
     rank_dict = dict(zip(rank_df['perturbation'], rank_df['index']))
     df['rank'] = df['perturbation'].map(rank_dict)
@@ -240,18 +339,180 @@ def add_rank_col(df, single_metric_df):
     # add an is_control column
     df['is_control'] = ['control' if 'control' in x else 'perturbation' for x in df['perturbation'].values]
 
-### Real data specific functions ###
-def compile_from_pwdfs(pwdfs, metrics, controls, ndegs):
-    """For real data."""
-    dfs, _ = get_distance_per_perturbation(pwdfs, 'dixit', metrics, controls)
+    if sort_per_control:
+        n_controls = df.is_control.value_counts()['control']
+        df['rank'][df.is_control == 'perturbation'] -= n_controls
+        ctrl_subset = df[df.is_control == 'control'].sort_values(by='rank')
+        ctrl_subset['rank'] -= np.array(range(n_controls))
+        df['rank'].loc[ctrl_subset.index] = ctrl_subset['rank']
 
-    df = pd.concat(dfs).reset_index()
-    df.columns = ['perturbation', 'distance', 'metric']
+    return df
+
+def get_melted_df_per_perturbation(pwdfs, metrics, controls, label, ndegs=None, reference=None, adata=None):
+    """
+    reference : str
+        Rank reference label (the condition to evaluate on).
+    """
+    dfs = get_distance_per_perturbation(pwdfs, metrics, controls, label=label)
+
+    df = pd.concat(dfs.values()).reset_index()
+    df.columns = ['perturbation', 'distance', 'metric', label]
 
     # add metadata labels
-    df['n_degs'] = df.perturbation.map(ndegs)
-    add_rank_col(df, dfs[0])
-    df['n_cells'] = df.perturbation.map(filtered.obs.perturbation.value_counts().to_dict())
-    df['log(n_cells)'] = np.log(df['n_cells'])
+    if ndegs:
+        df['n_degs'] = df.perturbation.map(ndegs)
+    if reference:
+        add_rank_col(df, dfs[reference], sort_per_control=False)
+    else:
+        add_rank_col(df, list(dfs.values())[0], sort_per_control=False)
+    if adata:
+        df['n_cells'] = df.perturbation.map(adata.obs.perturbation.value_counts().to_dict()).astype(float)
+        df['log(n_cells)'] = np.log(df['n_cells'])
     
     return df
+
+def generate_mix_control_into_perturbed(adata, n_mix=100):
+    """
+    Mix control cells into the perturbed conditions in a single-cell RNA-seq dataset.
+
+    Parameters
+    ----------
+    adata : AnnData
+        Contains a `'perturbation'` and `'mixin'` column in .obs.
+    n_mix : int (default: 100)
+        Number of control cells to mix into each perturbed condition.
+
+    Raises
+    ------
+    ValueError
+        If there are not enough control cells left for a robust 5-way split after mixing.
+    """
+    # calculate how many mixins are needed
+    n_perts = len(adata.obs.perturbation.unique()) - 1
+    cells_needed = n_perts*n_mix
+
+    if adata.obs.perturbation.value_counts()['control'] < cells_needed:
+        raise ValueError("Not enough control cells left for mixing.")
+
+    # make a new adata so we can still use the perturbation column
+    mixin = adata.copy()
+    mixin.obs['perturbation'] = mixin.obs['mixin'].values
+    mix_idxs = np.random.choice(mixin[mixin.obs.perturbation == 'mixin'].obs_names, size=cells_needed, replace=False)
+
+    perturbations = set(mixin.obs.perturbation.unique()) - set(['control'])
+    mixes = sample_and_merge_control_random(mixin, mix_idxs, n=len(perturbations))
+
+    controls = set(mixes.obs.perturbation.unique()) - set(mixin.obs.perturbation.unique())
+    mixes.obs['perturbation'] = mixes.obs.perturbation.replace(dict(zip(controls, perturbations)))
+    return mixes
+
+def get_ranked_df_per_perturbation(pwdfs, metrics, controls, label='condi'):
+    """
+    Rank all perturbations for each metric-condition dataframe.
+
+    Parameters:
+    -----------
+    metrics : list
+        A list of metrics to calculate rankings for.
+    controls : list
+        A list of control conditions.
+    label : str, optional
+        The label for the control condition in the DataFrame, defaults to 'condi'.
+    """
+    dfs = get_distance_per_perturbation(pwdfs, metrics, controls, label=label)
+    df = pd.concat(dfs.values()).reset_index()
+    df.columns = ['perturbation', 'distance', 'metric', label]
+
+    ## add rank column to each dataframe individually while removing 'control'
+    ## added in get_distance_per_perturbation
+    for key, single_metric_df in dfs.items():
+        full_df = single_metric_df.drop('control').reset_index()
+        full_df.columns = ['perturbation', 'distance', 'metric', label]
+        dfs[key] = add_rank_col(full_df, single_metric_df)
+
+    return pd.concat(dfs.values())
+
+def calc_rank_percentile(ind_ranked, target='control'):
+    """
+    Calculate rank percentiles for a specific perturbation condition.
+
+    Parameters:
+    -----------
+    ind_ranked : pd.DataFrame
+        A Pandas DataFrame from `get_ranked_df_per_perturbation`.
+    target : str, optional
+        The specific condition for which rank percentiles are calculated.
+        Defaults to 'control'.
+    """
+    if type(target) is str:
+        target_ranks = ind_ranked[ind_ranked.perturbation == target]
+    else:
+        target_ranks = ind_ranked[ind_ranked.perturbation.isin(target)]
+    target_ranks['rank'] = target_ranks['rank']/len(ind_ranked.perturbation.unique())
+    target_ranks = target_ranks.reset_index().drop(columns=['index'])
+    return target_ranks
+
+def generate_DEG_adatas(adata, filtered, included_perturbations, n):
+    """
+    Generate AnnData subsets with the top differentially expressed
+    genes (DEGs) for each perturbation condition.
+
+    Parameters:
+    ----------
+    adata : AnnData
+        The original AnnData object containing gene expression data.
+    filtered : AnnData
+        The AnnData object after any filtering or preprocessing steps.
+    included_perturbations : list
+        List of perturbation conditions for which DEGs will be computed and subset.
+    n : int
+        Number of top DEGs to select for each perturbation condition.
+    """
+    subset_adatas = []
+
+    for p in included_perturbations:
+        # Subset the original AnnData object for a specific perturbation condition
+        subset_adata = filtered[filtered.obs['perturbation'] == p].copy()
+
+        # get the top 50 DEGs from the original adata, versus control
+        top_genes = sc.get.rank_genes_groups_df(adata, group=p).names.values[:n]
+
+        # Subset the AnnData for this set of top genes
+        subset_adata = subset_adata[:, top_genes]
+        subset_adata.var_names = list(range(n))  # reset var_names to allow concat
+
+        subset_adatas.append(subset_adata)
+
+    return ad.concat(subset_adatas)
+
+def generate_sparsity(adata, obs, percentage):
+    """Decreases a percentage of counts by 1 in the original adata,
+    and then filters by the same filtering used to generate `obs`.
+    """
+    mtx = adata.layers['counts'].copy()
+
+    # Calculate the number of values to select
+    total_values = len(mtx.data)
+    values_to_select = int(percentage / 100 * total_values)
+
+    # Get a random sample of indices to select using numpy
+    selected_indices = np.random.choice(total_values, values_to_select, replace=False)
+
+    # Subtract 1 from the values at selected indices
+    mtx.data[selected_indices] -= 1
+    
+    # Set all values below 0 to 0
+    mtx.data[mtx.data < 0] = 0
+    
+    new_adata = adata.copy()
+    new_adata.X = mtx
+    new_adata.layers['counts'] = mtx
+    
+    sc.pp.normalize_total(new_adata, target_sum=1e6, exclude_highly_expressed=True)
+    sc.pp.log1p(new_adata)
+    
+    new_adata = new_adata[obs.index]
+    new_adata.obs = obs
+    # return the original subset
+    return new_adata
+
