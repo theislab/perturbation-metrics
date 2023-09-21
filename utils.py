@@ -23,10 +23,13 @@ def annotate(adata, params):
 
 def scanpy_setup(adata):
     """In-place."""
-    adata.layers['counts'] = adata.X.copy()
+    if 'counts' in adata.layers:
+        adata.X = adata.layers['counts'].copy()
+    else:
+        adata.layers['counts'] = adata.X.copy()
     sc.pp.normalize_total(adata, target_sum=1e6, exclude_highly_expressed=True)
     sc.pp.log1p(adata)
-    sc.pp.highly_variable_genes(adata, n_top_genes=5000)
+    sc.pp.highly_variable_genes(adata, n_top_genes=2000)
     sc.pp.pca(adata, use_highly_variable=True)
     adata.obs_names_make_unique()
     adata.var_names_make_unique()
@@ -216,7 +219,7 @@ def get_pwdf_per_condition(target_adata, metrics, cond_label, rep='pca'):
             dfs[metric + '-' + str(cond_label)] = calc_DEG_pwdf(target_adata, distance)
             continue
 
-        pwdf = distance.pairwise(target_adata, groupby='perturbation')
+        pwdf = distance.pairwise(target_adata, groupby='perturbation', show_progressbar=False)
         dfs[metric + '-' + str(cond_label)] = pwdf
 
     return dfs
@@ -244,8 +247,8 @@ def get_flat_df(pwdfs, controls=None, label='condi'):
     res_dict = {"avg_dist": [], "metric": [], label: []}
 
     for metric_condi, pwdf in pwdfs.items():
-        if controls is None:
-            controls = [x for x in pwdf.columns if 'control' in x]
+#        if controls is None:
+#            controls = [x for x in pwdf.columns if 'control' in x]
 
         # average distance per control = source of variation
         ctrl_stim = pwdf.loc[controls, :]
