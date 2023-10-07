@@ -5,12 +5,12 @@ import anndata as ad
 import pertpy as pt
 import matplotlib.pyplot as plt
 
-def plt_legend(x=None, y=None):
+def plt_legend(x=None, y=None, **kwargs):
     if not x:
         x = 1.01
     if not y:
         y = 1.03
-    plt.legend(bbox_to_anchor=(x, y))
+    plt.legend(bbox_to_anchor=(x, y), **kwargs)
 
 def annotate(adata, params):
     """Adds metadata annotations and a 'perturbation' column to SplatteR simulated data."""
@@ -103,7 +103,7 @@ def sample_and_merge_control_random(adata, control_key_or_indices, n=5):
 
 def remove_groups(adata, min_cells):
     """
-    Remove categories with fewer than `min_cells` cells.
+    Remove categories with fewer than `min_cells` cells. If there are more than 100 categories remaining, randomly select 100.
 
     Parameters
     ----------
@@ -119,6 +119,15 @@ def remove_groups(adata, min_cells):
     """
     group_counts = adata.obs["perturbation"].value_counts()
     selected_groups = group_counts[group_counts >= min_cells].index
+    selected_groups_c = [x for x in selected_groups if 'control' in x]
+    selected_groups_p = [x for x in selected_groups if 'control' not in x]
+    print("number of perturbations above min count:", len(selected_groups_p), flush=True)
+
+    # remove until 100 left
+    selected_groups_p = np.random.choice(selected_groups_p, size=100, replace=False)
+    selected_groups = set(selected_groups_p) & set(selected_groups_c)
+    print("number of perturbations remaining:", len(selected_groups_p), flush=True)
+
     return adata[adata.obs["perturbation"].isin(selected_groups)]
 
 def subsample(adata, n_cells):

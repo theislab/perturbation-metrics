@@ -9,6 +9,8 @@ from utils import scanpy_setup
 from utils import sample_and_merge_control_random, remove_groups, subsample, generate_sparsity
 from utils import inplace_check
 
+np.random.seed(0)
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--save_file", type=str, default='test.pkl', required=True)
