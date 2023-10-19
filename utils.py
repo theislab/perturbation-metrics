@@ -124,9 +124,9 @@ def remove_groups(adata, min_cells):
     print("number of perturbations above min count:", len(selected_groups_p), flush=True)
 
     # remove until 100 left
-    selected_groups_p = np.random.choice(selected_groups_p, size=100, replace=False)
-    selected_groups = set(selected_groups_p) & set(selected_groups_c)
-    print("number of perturbations remaining:", len(selected_groups_p), flush=True)
+    if len(selected_groups_p) > 100:
+        selected_groups_p = np.random.choice(selected_groups_p, size=100, replace=False)
+    selected_groups = set(selected_groups_p) | set(selected_groups_c)
 
     return adata[adata.obs["perturbation"].isin(selected_groups)]
 
@@ -191,7 +191,7 @@ def inplace_check(metrics, results, res, recompute=False):
     results[res.res_string] = res
 
 ## Calculating pairwise dfs
-def get_pwdf_per_condition(target_adata, metrics, cond_label, rep='pca'):
+def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca'):
     """
     Computes a pwdf dict where keys are a description of the settings.
     Always computes on ALL features of the `target_adata` that is passed in.
@@ -207,6 +207,21 @@ def get_pwdf_per_condition(target_adata, metrics, cond_label, rep='pca'):
     rep : str (default, pca)
         The data representation to use ('pca', 'lognorm', or 'counts').
     """
+    if type(controls) is not list:
+        raise ValueError(f"Got {controls} for controls. Did you pass your arguments in in the right order?")
+
+    calc_ndegs = False
+    if 'n_genes' in target_adata.uns.keys():
+        calc_ndegs = True
+        print('Warning: calculating n_degs. Please make sure this is desired behavior.')
+
+    def df_from_onesided(distance, adata, controls):
+        dists = []
+        for group in controls:
+            dist = distance.onesided_distances(adata, 'perturbation', selected_group=group, show_progressbar=False, n_jobs=-1)
+            dists.append(dist)
+        return pd.concat(dists, axis=1)
+
     dfs = {}
     for metric in metrics:
         if rep == 'pca':
@@ -224,14 +239,36 @@ def get_pwdf_per_condition(target_adata, metrics, cond_label, rep='pca'):
             raise ValueError('`rep` must be one of pca, lognorm, or counts.')
 
         # do something completely different when evaluating only on DEGs
-        if cond_label == 'n_DEGs':
-            dfs[metric + '-' + str(cond_label)] = calc_DEG_pwdf(target_adata, distance)
-            continue
-
-        pwdf = distance.pairwise(target_adata, groupby='perturbation', show_progressbar=False)
-        dfs[metric + '-' + str(cond_label)] = pwdf
+        if calc_ndegs:
+            pwdf = calc_DEG_pwdf(distance, target_adata, controls)
+        else:
+            pwdf = df_from_onesided(distance, target_adata, controls)
+        pwdf.columns = controls
+        dfs[metric + '-' + str(cond_label)] = pwdf.T
 
     return dfs
+
+def calc_DEG_pwdf(distance, target_adata, controls):
+    """calculates a distance per perturbation on the respective DEGs. Uses .uns['rank_genes_groups'] which must be assigned manually"""
+    ndegs = target_adata.uns['n_genes']
+
+    dfs = []
+    for c in controls:
+        res = {}
+        for p in target_adata.obs.perturbation.unique():
+            if p == c:
+                res[p] = 0
+                continue
+
+            top_genes = sc.get.rank_genes_groups_df(target_adata, group=p).names.values[:ndegs]
+            subset = target_adata[:, top_genes]
+            # sc.pp.pca(subset, use_highly_variable=False)  # rerun PCA in case it's being used # can't use like this too slow
+            d = distance.onesided_distances(subset, 'perturbation', selected_group=c, groups=[p], show_progressbar=False, n_jobs=-1)
+            res[p] = d[p]
+        dfs.append(pd.DataFrame.from_dict(res, orient='index'))
+    collat = pd.concat(dfs, axis=1)
+    collat.index.name = 'perturbation'
+    return collat
 
 ## Plotting
 def get_flat_df(pwdfs, controls=None, label='condi'):
