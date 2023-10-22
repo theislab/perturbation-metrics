@@ -1,0 +1,20 @@
+DATADIR: "DIRECTORY/TO/h5ad/data"
+TMPDIR: "DIR/TO/DUMP/THINGS"
+metrics:
+  - euclidean
+  - pearson_distance
+  - mean_absolute_error
+  - r2_distance
+  - spearman_distance
+  - mmd
+  - kl_divergence
+  - t_test
+  - wasserstein
+  - edistance
+  - mse
+  - cosine_distance
+datasets:
+  - sciplex_K562
+  - sciplex_A549
+  - sciplex_MCF7
+  - norman
