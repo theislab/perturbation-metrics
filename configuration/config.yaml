@@ -1,5 +1,4 @@
-DATADIR: "DIRECTORY/TO/h5ad/data"
-TMPDIR: "DIR/TO/DUMP/THINGS"
+TMPDIR: '/dss/dssfs02/lwp-dss-0001/pn36po/pn36po-dss-0001/di93zoj'  # "DIR/TO/DUMP/THINGS"
 metrics:
   - euclidean
   - pearson_distance

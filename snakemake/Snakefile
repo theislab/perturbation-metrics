@@ -4,8 +4,6 @@ Aim: Snakemake workflow for perturbation distances analysis.
 Date: 22.10.2023
 Run: snakemake
 Dryrun: snakemake -n
-DAG: snakemake --forceall --dag | dot -Tpdf > snake_dag.pdf
-Rulegraph: snakemake --forceall --rulegraph | dot -Tpdf > snake_rulegraph.pdf
 """
 
 import pandas as pd
@@ -16,95 +14,91 @@ from pathlib import Path
 
 # Load configs
 configfile: "../configuration/config.yaml"
-DATADIR = Path(config["DATADIR"])
 TMPDIR = Path(config["TMPDIR"])
 datasets = config["datasets"]
 metrics = config["metrics"]
+reps = ['lognorm', 'counts', 'pca']
 
 ### RULES ###
 
 rule all:
 	input:
-        expand("results/tables/{dataset}_{metric}_results.csv", 
-               dataset=datasets, metric=metrics)
+		expand("results/{dataset}/{rep}/{metric}_results.pkl", 
+			   dataset=datasets, metric=metrics, rep=reps)
 
 
 rule evaluate:
 	"Evaluates one metric on one dataset."
 	input: TMPDIR / 'prepared_{dataset}.h5ad'
-    output: "results/tables/{dataset}_{metric}_results.csv"
-    conda: '../environments/perturbation-metrics.yaml'
-    params:
-        test_mode = False
-        eval_mode = True
-        with_DEGs = False
+	output: "results/{dataset}/{rep}/{metric}_results.pkl"
+	conda: '../environments/perturbation-metrics.yaml'  # working?
+	params:
+		test_mode = False,
+		eval_mode = True,
+		with_DEGs = True
 	resources:
-		time='4:00:00',
-		mem_mb=4000,
-		disk_mb=4000
+		time='24:00:00',
+		mem_mb=32000,
+		disk_mb=32000
 	script:
-        "scripts/evaluate_snake.py"
+		"scripts/evaluate_snake.py"
 
 
 rule prepare_data:
-    "Prepares one dataset."
-    input: DATADIR / '{dataset}.h5ad'
-    output: TMPDIR / 'prepared_{dataset}.h5ad'
-    params:
-        test_mode = False
-    resources:
-		time='4:00:00',
-		mem_mb=4000,
-		disk_mb=4000
-    run:
-        # IMPORTS HERE
-        import scanpy as sc
-        import pertpy as pt
-        from ..utils.utils import sample_and_merge_control_random, remove_groups, scanpy_setup
+	"Prepares one dataset."
+	output: TMPDIR / 'prepared_{dataset}.h5ad'
+	params:
+		test_mode = False
+	resources:
+		time='8:00:00',
+		mem_mb=64000,
+		disk_mb=64000
+	run:
+		# IMPORTS HERE
+		import scanpy as sc
+		import pertpy as pt
+		from ..utils.utils import sample_and_merge_control_random, remove_groups, scanpy_setup
 
-        # load "raw" data
-        adata = sc.read(input[0])
+		if dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
+			cell_line = dataset.split('_')[1]
+			adata = pt.data.srivatsan_2020_sciplex3()
 
-        if dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
-            cell_line = dataset.split('_')[1]
-            adata = pt.data.srivatsan_2020_sciplex3()
+			if cell_line == 'A549':  # two doses in here, we only want the 24hr
+				adata = adata[adata.obs.time == 24]
+				
+			adata = adata[adata.obs.cell_line == cell_line]
+			sc.pp.filter_genes(adata, min_cells=100)
+			sc.pp.filter_cells(adata, min_genes=200)
 
-            if cell_line == 'A549':  # two doses in here, we only want the 24hr
-                adata = adata[adata.obs.time == 24]
-                
-            adata = adata[adata.obs.cell_line == cell_line]
-            sc.pp.filter_genes(adata, min_cells=100)
-            sc.pp.filter_cells(adata, min_genes=200)
+			# separate out the perturbations by dose
+			adata.obs['perturbation_name'] = adata.obs.perturbation.values
+			adata.obs['perturbation'] = adata.obs['perturbation_name'].astype(str) + '_' + adata.obs.dose_value.astype(str)
+			adata.obs['perturbation'] = adata.obs['perturbation'].replace({'control_0.0':'control'})
 
-            # separate out the perturbations by dose
-            adata.obs['perturbation_name'] = adata.obs.perturbation.values
-            adata.obs['perturbation'] = adata.obs['perturbation_name'].astype(str) + '_' + adata.obs.dose_value.astype(str)
-            adata.obs['perturbation'] = adata.obs['perturbation'].replace({'control_0.0':'control'})
+		elif dataset == 'norman':
+			adata = pt.data.norman_2019()
+			adata.obs['perturbation'] = adata.obs.perturbation_name
+			adata.var['ncounts'] = adata.X.A.sum(axis=0)
+			
+		else:
+			raise ValueError('must pass available dataset')
+		n_min_cells = 390 if dataset == 'norman' else 270
+		
+		if test_mode:
+			print("Test mode: subsampling", flush=True)
+			sc.pp.subsample(adata, .1)
+			n_min_cells = int(n_min_cells/8)
 
-        elif dataset == 'norman':
-            adata = pt.data.norman_2019()
-            adata.obs['perturbation'] = adata.obs.perturbation_name
-            adata.var['ncounts'] = adata.X.A.sum(axis=0)
-            
-        else:
-            raise ValueError('must pass available dataset')
-        n_min_cells = 390 if dataset == 'norman' else 270
-        
-        if test_mode:
-            print("Test mode: subsampling", flush=True)
-            sc.pp.subsample(adata, .1)
-            n_min_cells = int(n_min_cells/8)
+		### metric runs ###
+		scanpy_setup(adata)
 
-        ### metric runs ###
-        scanpy_setup(adata)
+		# set filtered adata used for all runs
+		merged = sample_and_merge_control_random(adata, 'control', n=5)
+		filtered = remove_groups(merged, min_cells=n_min_cells)
 
-        # set filtered adata used for all runs
-        merged = sample_and_merge_control_random(adata, 'control', n=5)
-        filtered = remove_groups(merged, min_cells=n_min_cells)
+		print(filtered, flush=True)
+		print("average number of counts per cell:", filtered.obs.ncounts.mean(), flush=True)
+		print("number of categories evaluated:", len(filtered.obs.perturbation.unique()), flush=True)
 
-        print(filtered, flush=True)
-        print("average number of counts per cell:", filtered.obs.ncounts.mean(), flush=True)
-        print("number of categories evaluated:", len(filtered.obs.perturbation.unique()), flush=True)
-
-        # write
-        filtered.write(output[0])
+		# write
+		filtered.write(output[0])
