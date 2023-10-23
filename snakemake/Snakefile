@@ -23,15 +23,15 @@ reps = ['lognorm', 'counts', 'pca']
 
 rule all:
 	input:
-		expand("results/{dataset}/{rep}/{metric}_results.pkl", 
+		expand("/lustre/groups/ml01/workspace/yuge.ji/metrics/results/{dataset}/{rep}/{metric}_results.pkl", 
 			   dataset=datasets, metric=metrics, rep=reps)
 
 
 rule evaluate:
 	"Evaluates one metric on one dataset."
 	input: TMPDIR / 'prepared_{dataset}.h5ad'
-	output: "results/{dataset}/{rep}/{metric}_results.pkl"
-	conda: '../environments/perturbation-metrics.yaml'  # working?
+	output: "/lustre/groups/ml01/workspace/yuge.ji/metrics/results/{dataset}/{rep}/{metric}_results.pkl"
+	conda: '../environments/perturbation-metrics.yaml'
 	params:
 		test_mode = False,
 		eval_mode = True,
