@@ -5,7 +5,6 @@ channels:
   - conda-forge
 dependencies:
   - conda-forge::python==3.9.0
-  - conda-forge::scanpy
   - pip
   - pip:
       - pertpy==0.5.0

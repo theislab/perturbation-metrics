@@ -57,7 +57,10 @@ rule prepare_data:
 		# IMPORTS HERE
 		import scanpy as sc
 		import pertpy as pt
-		from ..utils.utils import sample_and_merge_control_random, remove_groups, scanpy_setup
+		import sys
+		sys.path.append("../utils")
+		from utils import sample_and_merge_control_random, remove_groups, scanpy_setup
+		print(f"Preparing {dataset}")
 
 		if dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
 			cell_line = dataset.split('_')[1]
