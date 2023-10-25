@@ -26,12 +26,10 @@ rule all:
 		expand("/lustre/groups/ml01/workspace/yuge.ji/metrics/results/{dataset}/{rep}/{metric}_results.pkl", 
 			   dataset=datasets, metric=metrics, rep=reps)
 
-
 rule evaluate:
 	"Evaluates one metric on one dataset."
 	input: TMPDIR / 'prepared_{dataset}.h5ad'
 	output: "/lustre/groups/ml01/workspace/yuge.ji/metrics/results/{dataset}/{rep}/{metric}_results.pkl"
-	conda: '../environments/perturbation-metrics.yaml'
 	params:
 		test_mode = False,
 		eval_mode = True,
@@ -45,10 +43,8 @@ rule evaluate:
 
 
 rule prepare_data:
-	"Prepares one dataset."
+	"Prepares one dataset. IMPORTANT NOTE: data download cannot happen while threaded, please make sure data is pre-downloaded and not downloaded for the first time here."
 	output: TMPDIR / 'prepared_{dataset}.h5ad'
-	params:
-		test_mode = False
 	resources:
 		time='8:00:00',
 		mem_mb=64000,
@@ -60,7 +56,7 @@ rule prepare_data:
 		import sys
 		sys.path.append("../utils")
 		from utils import sample_and_merge_control_random, remove_groups, scanpy_setup
-		print(f"Preparing {dataset}")
+		dataset = wildcards.dataset
 
 		if dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
 			cell_line = dataset.split('_')[1]
@@ -86,11 +82,6 @@ rule prepare_data:
 		else:
 			raise ValueError('must pass available dataset')
 		n_min_cells = 390 if dataset == 'norman' else 270
-		
-		if test_mode:
-			print("Test mode: subsampling", flush=True)
-			sc.pp.subsample(adata, .1)
-			n_min_cells = int(n_min_cells/8)
 
 		### metric runs ###
 		scanpy_setup(adata)

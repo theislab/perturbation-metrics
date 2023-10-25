@@ -1,3 +1,5 @@
+import sys
+sys.path.append('../utils')
 from utils import get_pwdf_per_condition
 class DistanceResult():
     """DistanceResult object. Stores information about the adata used and

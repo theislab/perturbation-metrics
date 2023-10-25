@@ -4,8 +4,10 @@ import anndata as ad
 import scanpy as sc
 
 from distance_result import DistanceResult
-from ..utils.utils import subsample, generate_sparsity
-from ..utils.utils import inplace_check
+import sys
+sys.path.append('../utils')
+from utils import subsample, generate_sparsity
+from utils import inplace_check
 
 np.random.seed(0)
 
