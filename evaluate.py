@@ -22,6 +22,7 @@ parser.add_argument("--with_DEGs", dest='with_DEGs', default=False, action='stor
 
 ### Note that the default mode, without any flags, runs hvgs, ncells, and
 ### libsize across lognorm, counts, and pca representations.
+### n_min_cells decides the perturbations which are bretained
 
 args = parser.parse_args()
 test_mode = args.test_mode
@@ -32,9 +33,10 @@ save_file = args.save_file
 if eval_mode: save_file += '_sub'
 
 controls = ['control0', 'control1', 'control2', 'control3', 'control4']
-metrics = ['euclidean', 'pearson_distance', 'mean_absolute_error', 'r2_distance', 'spearman_distance']
-metrics += ['mmd', 'kl_divergence', 't_test', 'wasserstein']  # the experimental ones
-metrics += ['edistance', 'mse', 'cosine_distance']  # newly added
+metrics = ['euclidean', 'spearman_distance', 'mean_absolute_error']  # representative
+metrics += ['r2_distance', 'pearson_distance', 'mse', 'cosine_distance']  # fast
+metrics += ['edistance', 'jeffreys', 'mmd', 'ks_test', 't_test', 'wasserstein'] # slow
+metrics += ['classifier_proba', 'classifier_cp', 'kendalltau_distance']  # newly added
 
 print(f"running with test mode {test_mode}, dataset {args.dataset}, saving to {save_file}", flush=True)
 
@@ -59,11 +61,47 @@ if args.dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
 elif args.dataset == 'norman':
     adata = pt.data.norman_2019()
     adata.obs['perturbation'] = adata.obs.perturbation_name
-    adata.var['ncounts'] = adata.X.A.sum(axis=0)
     
     n_min_cells = 390
+elif args.dataset == 'mcfarland':
+    adata = pt.data.mcfarland_2020()
+
+    # subset to common timepoints and most frequently occurring cell line - no better options
+    adata = adata[adata.obs.time.isin(['6', '24']) & (adata.obs.cell_line == 'COLO680N')]
+    adata.obs['perturbation'] = adata.obs['perturbation'].astype(str) + '_' + adata.obs.time.astype(str)
+    adata.obs['perturbation'] = adata.obs.perturbation.replace({'control_24':'control', 'control_6':'control'})
+
+    n_min_cells = 100
+elif args.dataset == 'schiebinger':
+    adata = pt.data.schiebinger_2019_18day()
+    # take only the Dox and control conditions, representing full, "normal" reprogramming
+    adata = adata[adata.obs.perturbation.isin(['control', 'Dox']) & (~adata.obs.age.isin(['iPSC', 'D0', 'D0.5']))]
+    adata.obs['perturbation_old'] = adata.obs.perturbation
+    adata.obs['perturbation'] = adata.obs.age.replace({'D1':'control'})
+
+    n_min_cells = 400
+elif args.dataset == 'garcia':
+    adata = sc.read('./data/garcia2022.h5ad')
+
+    adata = adata[adata.obs.cell_type == 'Ovarian interstitial cells']
+    adata.obs['perturbation'] = adata.obs.age.replace({8.6:'control'}).astype(str)
+
+    n_min_cells = 300
+elif args.dataset == 'satinha':
+    adata = sc.read('./data/SantinhaPlatt2023_GSE236519_pooled_screen_CBh_temp.h5ad')
+
+    sc.pp.filter_genes(adata, min_cells=100)
+    adata = adata[~adata.obs.per_gene.isnull()]
+    included_cts = adata.obs.cell_types.value_counts()[adata.obs.cell_types.value_counts() > 1000].index
+    adata = adata[adata.obs.cell_types.isin(included_cts)]
+    adata.obs['perturbation'] = adata.obs.per_gene.replace({'Safe_H':'control'})
+
+    n_min_cells = 480  # just enough to split control 5 ways
 else:
     raise ValueError('must pass available dataset')
+
+if 'control' not in adata.obs.perturbation.unique():
+    raise ValueError('control must be a condition in `.obs.perturbation`')
 
 if test_mode:
     print("Test mode: subsampling", flush=True)
@@ -74,6 +112,7 @@ if test_mode:
 
 ### metric runs ###
 scanpy_setup(adata)
+adata.obs['ncounts'] = adata.X.A.sum(axis=1)
 
 # set filtered adata used for all runs
 merged = sample_and_merge_control_random(adata, 'control', n=5)
@@ -120,7 +159,8 @@ for rep in ['lognorm', 'counts', 'pca']:
 
     ### n_cells ###
     print('running n_cells', flush=True)
-    experiment_condi = list(range(100, n_min_cells+10, 50)) + [n_min_cells]
+    max_n_cells = n_min_cells if n_min_cells < 400 else 400
+    experiment_condi = list(range(100, max_n_cells+10, 50)) + [max_n_cells]
 
     for ncell in experiment_condi:
         subset = subsample(filtered, ncell)[:, adata.var['highly_variable']]

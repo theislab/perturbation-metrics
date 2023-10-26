@@ -215,7 +215,7 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
         calc_ndegs = True
         print('Warning: calculating n_degs. Please make sure this is desired behavior.')
 
-    def df_from_onesided(distance, adata, controls):
+    def df_from_onesided(distance, adata, controls, **kwargs):
         dists = []
         for group in controls:
             dist = distance.onesided_distances(adata, 'perturbation', selected_group=group, show_progressbar=False, n_jobs=-1)

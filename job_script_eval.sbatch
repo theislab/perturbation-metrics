@@ -13,3 +13,7 @@ pip install -e /mnt/yuge/pertpy
 python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=spK562 --dataset=sciplex_K562 --with_DEGs  # full run
 python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=spMCF7 --dataset=sciplex_MCF7 --eval_mode
 python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=norman --dataset=norman --eval_mode
+python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=mcfarland --dataset=mcfarland --eval_mode
+python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=schiebinger --dataset=schiebinger --eval_mode
+python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=satinha --dataset=satinha --eval_mode
+python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=garcia --dataset=garcia --eval_mode
