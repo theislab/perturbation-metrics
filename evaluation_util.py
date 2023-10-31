@@ -66,7 +66,7 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
 
     # add in rank dataframe
     avg_rank, var_rank = perf_df(results)
-    results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1)
+    results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1).sort_values(by=f'1-corr_{ground_truth_label}')
 
     # dataframe plot (not customizeable)
     plt.figure(figsize=(5, 5))
@@ -89,9 +89,9 @@ def perf_df(results):
     best_case = ctrl_ranks[ctrl_ranks[exp] == '2000']
 
     avg_rank = best_case[['rank', 'metric']].groupby('metric').mean().sort_values('rank')
-    avg_rank.columns = ['rank_mean']
+    avg_rank.columns = ['sensitivity']
 
     var_rank = best_case[['rank', 'metric']].groupby('metric').var().sort_values('rank')*100
-    var_rank.columns = ['rank_var*100']
+    var_rank.columns = ['robustness']
     
     return avg_rank, var_rank
