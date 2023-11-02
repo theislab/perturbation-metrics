@@ -130,7 +130,7 @@ def remove_groups(adata, min_cells):
 
     return adata[adata.obs["perturbation"].isin(selected_groups)]
 
-def subsample(adata, n_cells):
+def subsample(adata, n_cells, groupby='perturbation'):
     """
     Subsample all perturbations to contain at most `n_cells`.
 
@@ -146,7 +146,7 @@ def subsample(adata, n_cells):
     anndata.AnnData
         A new Anndata dataset with perturbations subsampled to contain at most the specified number of cells.
     """
-    groups = adata.obs.groupby("perturbation").apply(lambda x: x.sample(n=n_cells, random_state=0, replace=False))
+    groups = adata.obs.groupby(groupby).apply(lambda x: x.sample(n=n_cells, random_state=0, replace=False))
     cells = [i for _, i in groups.index]
     new = adata[adata.obs_names.isin(cells)]
     return new

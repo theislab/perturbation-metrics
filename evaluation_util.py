@@ -46,12 +46,12 @@ def plot(results, tags, plot=True):
     
     return pwdfs, ctrl_ranks
 
-def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distance='mean_absolute_error'):
+def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distance='mean_absolute_error', rep='lognorm'):
     exp = 'n_genes'
     metrics = list(results.values())[0].metrics
     controls = ['control0', 'control1', 'control2', 'control3', 'control4']
 
-    pwdfs, ctrl_ranks = plot(results, [exp, 'lognorm', '2000'], plot=False)
+    pwdfs, ctrl_ranks = plot(results, [exp, rep, '2000'], plot=False)
     df = get_melted_df_per_perturbation(pwdfs, metrics, controls, exp, reference=f'{optimal_distance}-2000')
     annotate_fn(df)
     df = df[df.is_control == 'perturbation']
@@ -61,16 +61,18 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
         sub = df[df.metric == m]
         sr[m] = spearmanr(sub['distance'].values, sub[ground_truth_label].values)[0]
     corr_wreal = pd.DataFrame.from_dict(sr, orient='index').sort_values(0)
-    corr_wreal[0] = 1 - corr_wreal[0]  # flip so smaller is better
+#    corr_wreal[0] = 1 - corr_wreal[0]  # flip so smaller is better
     corr_wreal.columns = [f'1-corr_{ground_truth_label}']
 
     # add in rank dataframe
-    avg_rank, var_rank = perf_df(results)
+    avg_rank, var_rank = perf_df(results, rep=rep)
+    avg_rank = 1-avg_rank
+    var_rank = 1-var_rank
     results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1).sort_values(by=f'1-corr_{ground_truth_label}')
 
     # dataframe plot (not customizeable)
     plt.figure(figsize=(5, 5))
-    sns.heatmap(results, annot=True, cmap='gist_heat_r', fmt=".3f", linewidths=.5, cbar_kws={'label': 'relative values'})
+    sns.heatmap(results, annot=True, cmap='gist_heat', fmt=".3f", linewidths=.5, cbar_kws={'label': 'relative values'})
     plt.grid(None)
     plt.show()
 
@@ -83,15 +85,15 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
 
     return results
 
-def perf_df(results):
+def perf_df(results, rep='lognorm'):
     exp = 'n_genes'
-    pwdfs, ctrl_ranks = plot(results, [exp, 'lognorm'], plot=False)
+    pwdfs, ctrl_ranks = plot(results, [exp, rep], plot=False)
     best_case = ctrl_ranks[ctrl_ranks[exp] == '2000']
 
     avg_rank = best_case[['rank', 'metric']].groupby('metric').mean().sort_values('rank')
     avg_rank.columns = ['sensitivity']
 
-    var_rank = best_case[['rank', 'metric']].groupby('metric').var().sort_values('rank')*100
+    var_rank = best_case[['rank', 'metric']].groupby('metric').var().sort_values('rank')
     var_rank.columns = ['robustness']
     
     return avg_rank, var_rank
