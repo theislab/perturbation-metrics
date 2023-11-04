@@ -130,7 +130,7 @@ def remove_groups(adata, min_cells):
 
     return adata[adata.obs["perturbation"].isin(selected_groups)]
 
-def subsample(adata, n_cells):
+def subsample(adata, n_cells, groupby='perturbation'):
     """
     Subsample all perturbations to contain at most `n_cells`.
 
@@ -146,7 +146,7 @@ def subsample(adata, n_cells):
     anndata.AnnData
         A new Anndata dataset with perturbations subsampled to contain at most the specified number of cells.
     """
-    groups = adata.obs.groupby("perturbation").apply(lambda x: x.sample(n=n_cells, random_state=0, replace=False))
+    groups = adata.obs.groupby(groupby).apply(lambda x: x.sample(n=n_cells, random_state=0, replace=False))
     cells = [i for _, i in groups.index]
     new = adata[adata.obs_names.isin(cells)]
     return new
@@ -215,7 +215,7 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
         calc_ndegs = True
         print('Warning: calculating n_degs. Please make sure this is desired behavior.')
 
-    def df_from_onesided(distance, adata, controls):
+    def df_from_onesided(distance, adata, controls, **kwargs):
         dists = []
         for group in controls:
             dist = distance.onesided_distances(adata, 'perturbation', selected_group=group, show_progressbar=False, n_jobs=-1)
