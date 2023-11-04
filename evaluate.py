@@ -203,7 +203,7 @@ for rep in ['lognorm', 'counts', 'pca']:
             subset.uns['n_genes'] = n
             inplace_check(metrics, results, DistanceResult(subset, controls, str(n), rep, 'n_DEGs'))
 
-        break  # temporary for runtime, run only lognorm for everything
+#        break  # temporary for runtime, run only lognorm for everything
         
 print('finished with', results.keys(), flush=True)
 print('added keys:', set(results.keys())-current_keys, flush=True)

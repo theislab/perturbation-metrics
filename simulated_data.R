@@ -45,42 +45,17 @@ control <-tibble::tribble(
   # Control
   0.40,     0.05,        0.5,     0.10,       0.40,      20,    0.5,
 )
-
-# same populations, different number of DE genes
-perturbed <- tibble::tribble(
- ~ DEProb,  
-   0.00001,  
-   0.0001,   
-   0.001,    
-   0.005,    
-   0.01,     
-   0.05,     
-   0.00001,  
-   0.0001,   
-   0.001,    
-   0.005,    
-   0.01,     
-   0.05,     
-   0.00001,  
-   0.0001,   
-   0.001,    
-   0.005,    
-   0.01,     
-   0.05,     
-   0.00001,  
-   0.0001,   
-   0.001,    
-   0.005,    
-   0.01,     
-   0.05,     
-)
-n <- 24
-perturbed$Prob = rep(.6/n, n)
-perturbed$DownProb = rep(.50, n)
-perturbed$FacLoc = c(rep(.2, n/4), rep(.5, n/4), rep(1, n/4), rep(1.5, n/4))  # adjust size of lognormfoldchange
-perturbed$FacScale = c(rep(.2, n/4), rep(.5, n/4), rep(1, n/4), rep(1.5, n/4))  # adjust variance
-perturbed$Steps = rep(2.0, n)
-perturbed$Skew = rep(0.0, n)
+n <- 32
+n_loops <- 4
+perturbed <- tibble::as_tibble(data.frame(
+  Prob = rep(.6/n, n),
+  DEProb = rep(c(0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05), times = n_loops),
+  DownProb = rep(.50, n),
+  FacLoc = c(rep(.2, n/n_loops), rep(.5, n/n_loops), rep(1, n/n_loops), rep(1.5, n/n_loops)),
+  FacScale = c(rep(.2, n/n_loops), rep(.5, n/n_loops), rep(1, n/n_loops), rep(1.5, n/n_loops)),
+  Steps = rep(2.0, n),
+  Skew = rep(0.0, n)
+))
 
 conditions = rbind(control, perturbed)
 
@@ -97,6 +72,10 @@ sim <- splatSimulatePaths(
     # Dispersion (bit hard to explain...)
     bcv.common = 0.1,
     bcv.df = 60,
+    # Dropout, parameterized by rlogis(), ie. hist(rlogis(10000, location = .3, scale = 1))
+    dropout.type = 'experiment',
+    dropout.mid = .3,
+    dropout.shape = -1,
     # PATH PARAMETERS - MUST BE SET
     group.prob = conditions$Prob,
     path.nSteps = conditions$Steps,
@@ -112,10 +91,10 @@ sim <- splatSimulatePaths(
 
 # Save the count matrix and then the observation labels
 sce_counts <- as.matrix(counts(sim))
-write.table(sce_counts, 'splatter_sim.csv', sep=",")
+write.table(sce_counts, 'splatter_sim_dropout.csv', sep=",")
 sce_obs <- colData(sim)
-write.table(sce_obs, 'splatter_sim_obs.csv', sep=",")
-write.table(conditions, 'splatter_sim_params.csv', sep=",")
+write.table(sce_obs, 'splatter_sim_obs_dropout.csv', sep=",")
+write.table(conditions, 'splatter_sim_params_dropout.csv', sep=",")
 
 ##### Second simulation - sparsity ######
 #########################################
@@ -146,7 +125,7 @@ perturbed$Steps = rep(2.0, n)
 perturbed$Skew = rep(0.0, n)
 conditions = rbind(control, perturbed)
 
-for (LibLoc in c(8.3, 8.5, 8.7, 8.9, 9.1, 9.3)){
+for (LibLoc in c(8.1, 8.3, 8.5, 8.7, 8.9, 9.1, 9.3)){
   sim <- splatSimulatePaths(
     params = base_params,
     batchCells = 12000,
@@ -160,6 +139,10 @@ for (LibLoc in c(8.3, 8.5, 8.7, 8.9, 9.1, 9.3)){
     # Dispersion (bit hard to explain...)
     bcv.common = 0.1,
     bcv.df = 60,
+    # Dropout
+    dropout.type = 'experiment',
+    dropout.mid = .3,
+    dropout.shape = -1,
     # PATH PARAMETERS - MUST BE SET
     group.prob = conditions$Prob,
     path.nSteps = conditions$Steps,
@@ -174,7 +157,6 @@ for (LibLoc in c(8.3, 8.5, 8.7, 8.9, 9.1, 9.3)){
   )
 
   # Save the count matrix and then the observation labels
-  # name = paste(p.DE, pLFC, '0_data.csv', sep='_')
   sce_counts <- as.matrix(counts(sim))  
   write.table(sce_counts, paste(LibLoc, 'sparsity_sim.csv', sep='-'), sep=",")
   sce_obs <- colData(sim)
