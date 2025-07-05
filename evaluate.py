@@ -1,5 +1,6 @@
 import pickle
 import argparse
+import ast
 import numpy as np
 import anndata as ad
 import scanpy as sc
@@ -22,20 +23,20 @@ parser.add_argument("--with_DEGs", dest='with_DEGs', default=False, action='stor
 
 ### Note that the default mode, without any flags, runs hvgs, ncells, and
 ### libsize across lognorm, counts, and pca representations.
-### n_min_cells decides the perturbations which are bretained
+### n_min_cells decides the perturbations which are retained
 
 args = parser.parse_args()
 test_mode = args.test_mode
 eval_mode = args.eval_mode
 with_DEGs = args.with_DEGs
-dss_path = '/dss/dssfs02/lwp-dss-0001/pn36po/pn36po-dss-0001/di93zoj'
+dss_path = '/lustre/scratch/users/yuge.ji/metrics'
 save_file = args.save_file
 if eval_mode: save_file += '_sub'
 
 controls = ['control0', 'control1', 'control2', 'control3', 'control4']
 metrics = ['euclidean', 'spearman_distance', 'mean_absolute_error']  # representative
 metrics += ['r2_distance', 'pearson_distance', 'mse', 'cosine_distance']  # fast
-metrics += ['edistance', 'jeffreys', 'mmd', 'ks_test', 't_test', 'wasserstein'] # slow
+metrics += ['edistance', 'sym_kldiv', 'mmd', 'ks_test', 't_test', 'wasserstein'] # slow
 metrics += ['classifier_proba', 'classifier_cp', 'kendalltau_distance']  # newly added
 
 print(f"running with test mode {test_mode}, dataset {args.dataset}, saving to {save_file}", flush=True)
@@ -97,6 +98,19 @@ elif args.dataset == 'satinha':
     adata.obs['perturbation'] = adata.obs.per_gene.replace({'Safe_H':'control'})
 
     n_min_cells = 480  # just enough to split control 5 ways
+elif args.dataset in ['tahoe_A549', 'tahoe_HT29', 'tahoe_BT474']:
+    cell_line = args.dataset.split('_')[1]
+    adata = sc.read(f'./data/Tahoe_{cell_line}_only_full_genes.h5ad')
+    adata.X = adata.layers['counts']
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
+
+    # separate out the perturbations by dose
+    adata.obs['dose (uM)'] = adata.obs['drugname_drugconc'].apply(lambda x: ast.literal_eval(x)[0][1])
+    adata.obs['perturbation'] = adata.obs.drug.astype(str) + '_' + adata.obs['dose (uM)'].astype(str)
+    adata.obs['perturbation'] = adata.obs.perturbation.replace({'DMSO_TF_0.0':'control'})
+
+    n_min_cells = 300
 else:
     raise ValueError('must pass available dataset')
 

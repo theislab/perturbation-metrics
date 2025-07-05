@@ -62,7 +62,7 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
         sr[m] = spearmanr(sub['distance'].values, sub[ground_truth_label].values)[0]
     corr_wreal = pd.DataFrame.from_dict(sr, orient='index').sort_values(0)
 #    corr_wreal[0] = 1 - corr_wreal[0]  # flip so smaller is better
-    corr_wreal.columns = [f'1-corr_{ground_truth_label}']
+    corr_wreal.columns = [f'corr_{ground_truth_label}']
 
     # add in rank dataframe
     avg_rank, var_rank = perf_df(results, rep=rep)

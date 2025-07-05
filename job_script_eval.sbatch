@@ -1,20 +1,29 @@
-#!/bin/sh
-#SBATCH -p lrz-v100x2
-#SBATCH --gres=gpu:1
-#SBATCH --mem=100G
-#SBATCH --nice=10000
-#SBATCH -t 1-00:00
-#SBATCH --container-image='/dss/dssfs02/lwp-dss-0001/pn36po/pn36po-dss-0001/di35dul/pp_atlas.sqsh'
-#SBATCH --container-mounts=/dss/dsshome1/02/di93zoj/yuge:/mnt/yuge
-#SBATCH -o out/run-%A_%a.out
-#SBATCH -e out/run-%A_%a.err
+#!/bin/bash
+#SBATCH --job-name=metrics_eval
+#SBATCH --output=err/job_output_%A_%a.txt
+#SBATCH --error=err/job_error_%A_%a.txt
+#SBATCH --ntasks=1
+#SBATCH --time=48:00:00
+#SBATCH --mem=150GB
+#SBATCH --cpus-per-task=6
+#SBATCH --partition=cpu_p
+#SBATCH --qos=cpu_normal
+#SBATCH --nice=0
+#SBATCH --array=0-0
 
-pip install -e /mnt/yuge/pertpy
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=spK562 --dataset=sciplex_K562 --with_DEGs  # full run
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=spMCF7 --dataset=sciplex_MCF7 --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=spA549 --dataset=sciplex_A549 --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=norman --dataset=norman --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=mcfarland --dataset=mcfarland --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=schiebinger --dataset=schiebinger --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=satinha --dataset=satinha --eval_mode
-python /mnt/yuge/perturbation-metrics/evaluate.py --save_file=garcia --dataset=garcia --eval_mode
+settings=(
+    # "spMCF7 sciplex_MCF7"
+    # "spA549 sciplex_A549"
+    # "spK562 sciplex_K562"
+    # "norman norman"
+    # "mcfarland mcfarland"
+    # "schiebinger schiebinger"
+    # "satinha satinha"
+    # "garcia garcia"
+    # "tahoe tahoe_A549"
+    # "tahoeBT474 tahoe_BT474"
+     "tahoeHT29 tahoe_HT29"
+)
+
+source activate pertpy_clean2
+python evaluate.py --save_file=$(echo ${settings[$SLURM_ARRAY_TASK_ID]} | cut -d' ' -f1) --dataset=$(echo ${settings[$SLURM_ARRAY_TASK_ID]} | cut -d' ' -f2) --eval_mode
