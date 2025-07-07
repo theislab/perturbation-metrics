@@ -12,17 +12,18 @@
 #SBATCH --array=0-0
 
 settings=(
-    # "spMCF7 sciplex_MCF7"
-    # "spA549 sciplex_A549"
-    # "spK562 sciplex_K562"
-    # "norman norman"
-    # "mcfarland mcfarland"
-    # "schiebinger schiebinger"
-    # "satinha satinha"
-    # "garcia garcia"
-    # "tahoe tahoe_A549"
-    # "tahoeBT474 tahoe_BT474"
-     "tahoeHT29 tahoe_HT29"
+    "sim simulated"
+    "spMCF7 sciplex_MCF7"
+    "spA549 sciplex_A549"
+    "spK562 sciplex_K562"
+    "norman norman"
+    "mcfarland mcfarland"
+    "schiebinger schiebinger"
+    "satinha satinha"
+    "garcia garcia"
+    "tahoe tahoe_A549"
+    "tahoeBT474 tahoe_BT474"
+    "tahoeHT29 tahoe_HT29"
 )
 
 source activate pertpy_clean2

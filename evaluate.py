@@ -29,7 +29,7 @@ args = parser.parse_args()
 test_mode = args.test_mode
 eval_mode = args.eval_mode
 with_DEGs = args.with_DEGs
-dss_path = '/lustre/scratch/users/yuge.ji/metrics'
+dss_path = '/lustre/scratch/users/yuge.ji/metrics/with_DEGs'
 save_file = args.save_file
 if eval_mode: save_file += '_sub'
 
@@ -59,6 +59,10 @@ if args.dataset in ['sciplex_K562', 'sciplex_A549', 'sciplex_MCF7']:
     adata.obs['perturbation'] = adata.obs['perturbation'].replace({'control_0.0':'control'})
 
     n_min_cells = 270
+elif args.dataset == 'simulated':
+    adata = sc.read('./data/splatter_sim.h5ad')
+    
+    n_min_cells = 600
 elif args.dataset == 'norman':
     adata = pt.data.norman_2019()
     adata.obs['perturbation'] = adata.obs.perturbation_name
@@ -126,7 +130,10 @@ if test_mode:
 
 ### metric runs ###
 scanpy_setup(adata)
-adata.obs['ncounts'] = adata.X.A.sum(axis=1)
+try:
+    adata.obs['ncounts'] = adata.X.A.sum(axis=1)
+except AttributeError:  # handle non-matrices
+    adata.obs['ncounts'] = adata.X.sum(axis=1)
 
 # set filtered adata used for all runs
 merged = sample_and_merge_control_random(adata, 'control', n=5)
@@ -199,7 +206,8 @@ for rep in ['lognorm', 'counts', 'pca']:
     if with_DEGs:
         print('running ndegs', flush=True)
         if rep == 'pca':
-            raise ValueError('Cannot run n_degs eval with pca right now due to runtime constraints.')
+            print('Warning: Skipping n_degs eval with pca due to runtime constraints.', flush=True)
+            continue
         experiment_condi = [10, 20, 30, 40, 50, 100, 150, 200, 300, 400]
 
         # create new adata to calculate DEGs and has run-specific info

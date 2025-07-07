@@ -26,7 +26,7 @@ def plot(results, tags, plot=True):
         melted_df = get_flat_df(pwdfs, controls, label=label_tag)
         plt.figure(figsize=(10, 5))
         sns.lineplot(data=normalize_per_metric(melted_df), x=label_tag, y='avg_dist', hue='metric')
-        plt.ylabel('relative avg dist');
+        plt.ylabel('relative avg dist')
         if 'n_genes' in label_tag:
             plt.xscale('log')
         plt_legend()
@@ -68,7 +68,7 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
     avg_rank, var_rank = perf_df(results, rep=rep)
     avg_rank = 1-avg_rank
     var_rank = 1-var_rank
-    results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1).sort_values(by=f'1-corr_{ground_truth_label}')
+    results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1).sort_values(by=f'corr_{ground_truth_label}')
 
     # dataframe plot (not customizeable)
     plt.figure(figsize=(5, 5))
