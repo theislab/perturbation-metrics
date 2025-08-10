@@ -29,14 +29,14 @@ args = parser.parse_args()
 test_mode = args.test_mode
 eval_mode = args.eval_mode
 with_DEGs = args.with_DEGs
-dss_path = '/lustre/scratch/users/yuge.ji/metrics/with_DEGs'
+dss_path = '/lustre/scratch/users/yuge.ji/metrics'
 save_file = args.save_file
 if eval_mode: save_file += '_sub'
 
 controls = ['control0', 'control1', 'control2', 'control3', 'control4']
 metrics = ['euclidean', 'spearman_distance', 'mean_absolute_error']  # representative
 metrics += ['r2_distance', 'pearson_distance', 'mse', 'cosine_distance']  # fast
-metrics += ['edistance', 'sym_kldiv', 'mmd', 'ks_test', 't_test', 'wasserstein'] # slow
+metrics += ['edistance', 'sym_kldiv', 'mmd', 'mmd_rbf', 'ks_test', 't_test', 'wasserstein', 'wasserstein_cosine'] # slow
 metrics += ['classifier_proba', 'classifier_cp', 'kendalltau_distance']  # newly added
 
 print(f"running with test mode {test_mode}, dataset {args.dataset}, saving to {save_file}", flush=True)

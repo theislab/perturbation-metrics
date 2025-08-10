@@ -218,12 +218,19 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
     def df_from_onesided(distance, adata, controls, **kwargs):
         dists = []
         for group in controls:
-            dist = distance.onesided_distances(adata, 'perturbation', selected_group=group, show_progressbar=False, n_jobs=-1)
+            dist = distance.onesided_distances(adata, 'perturbation', selected_group=group, show_progressbar=False, n_jobs=-1, **kwargs)
             dists.append(dist)
         return pd.concat(dists, axis=1)
 
     dfs = {}
     for metric in metrics:
+        add_kwargs = {}
+        if metric == 'mmd_rbf':
+            metric = 'mmd'
+            add_kwargs['kernel'] = 'rbf'
+        elif metric == 'wasserstein_cosine':
+            metric = 'wasserstein'
+            add_kwargs['cost_function'] = 'cosine'
         if rep == 'pca':
             sc.pp.pca(target_adata, use_highly_variable=False)  # rerun PCA in case the number of features has changed
             distance = pt.tools.Distance(metric=metric)
@@ -240,15 +247,15 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
 
         # do something completely different when evaluating only on DEGs
         if calc_ndegs:
-            pwdf = calc_DEG_pwdf(distance, target_adata, controls)
+            pwdf = calc_DEG_pwdf(distance, target_adata, controls, **add_kwargs)
         else:
-            pwdf = df_from_onesided(distance, target_adata, controls)
+            pwdf = df_from_onesided(distance, target_adata, controls, **add_kwargs)
         pwdf.columns = controls
         dfs[metric + '-' + str(cond_label)] = pwdf.T
 
     return dfs
 
-def calc_DEG_pwdf(distance, target_adata, controls):
+def calc_DEG_pwdf(distance, target_adata, controls, **kwargs):
     """calculates a distance per perturbation on the respective DEGs. Uses .uns['rank_genes_groups'] which must be assigned manually"""
     ndegs = target_adata.uns['n_genes']
 
@@ -263,7 +270,7 @@ def calc_DEG_pwdf(distance, target_adata, controls):
             top_genes = sc.get.rank_genes_groups_df(target_adata, group=p).names.values[:ndegs]
             subset = target_adata[:, top_genes]
             # sc.pp.pca(subset, use_highly_variable=False)  # rerun PCA in case it's being used # can't use like this too slow
-            d = distance.onesided_distances(subset, 'perturbation', selected_group=c, groups=[p], show_progressbar=False, n_jobs=-1)
+            d = distance.onesided_distances(subset, 'perturbation', selected_group=c, groups=[p], show_progressbar=False, n_jobs=-1, **kwargs)
             res[p] = d[p]
         dfs.append(pd.DataFrame.from_dict(res, orient='index'))
     collat = pd.concat(dfs, axis=1)
