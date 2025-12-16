@@ -224,13 +224,13 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
 
     dfs = {}
     for metric in metrics:
+        original_metric = metric
         add_kwargs = {}
+        # additional processing for metrics with different params
         if metric == 'mmd_rbf':
             metric = 'mmd'
             add_kwargs['kernel'] = 'rbf'
-        elif metric == 'wasserstein_cosine':
-            metric = 'wasserstein'
-            add_kwargs['cost_function'] = 'cosine'
+
         if rep == 'pca':
             sc.pp.pca(target_adata, use_highly_variable=False)  # rerun PCA in case the number of features has changed
             distance = pt.tools.Distance(metric=metric)
@@ -251,7 +251,7 @@ def get_pwdf_per_condition(target_adata, metrics, controls, cond_label, rep='pca
         else:
             pwdf = df_from_onesided(distance, target_adata, controls, **add_kwargs)
         pwdf.columns = controls
-        dfs[metric + '-' + str(cond_label)] = pwdf.T
+        dfs[original_metric + '-' + str(cond_label)] = pwdf.T
 
     return dfs
 

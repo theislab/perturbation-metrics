@@ -3,13 +3,13 @@
 #SBATCH --output=err/job_output_%A_%a.txt
 #SBATCH --error=err/job_error_%A_%a.txt
 #SBATCH --ntasks=1
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=150GB
 #SBATCH --cpus-per-task=6
 #SBATCH --partition=cpu_p
 #SBATCH --qos=cpu_normal
 #SBATCH --nice=0
-#SBATCH --array=0-0
+#SBATCH --array=0-11
 
 settings=(
     "sim simulated"
