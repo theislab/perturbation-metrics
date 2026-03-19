@@ -130,7 +130,7 @@ def remove_groups(adata, min_cells):
 
     return adata[adata.obs["perturbation"].isin(selected_groups)]
 
-def subsample(adata, n_cells, groupby='perturbation'):
+def subsample(adata, n_cells, groupby='perturbation', random_state=0):
     """
     Subsample all perturbations to contain at most `n_cells`.
 
@@ -146,7 +146,7 @@ def subsample(adata, n_cells, groupby='perturbation'):
     anndata.AnnData
         A new Anndata dataset with perturbations subsampled to contain at most the specified number of cells.
     """
-    groups = adata.obs.groupby(groupby).apply(lambda x: x.sample(n=n_cells, random_state=0, replace=False))
+    groups = adata.obs.groupby(groupby).apply(lambda x: x.sample(n=n_cells, random_state=random_state, replace=False))
     cells = [i for _, i in groups.index]
     new = adata[adata.obs_names.isin(cells)]
     return new
@@ -545,20 +545,29 @@ def generate_sparsity(adata, obs, percentage):
     """Decreases a percentage of counts by 1 in the original adata,
     and then filters by the same filtering used to generate `obs`.
     """
+    from scipy.sparse import issparse
+
     mtx = adata.layers['counts'].copy()
 
+    # Handle both sparse and dense matrices (e.g. Splatter-simulated data is dense)
+    if issparse(mtx):
+        data = mtx.data
+    else:
+        mtx = np.asarray(mtx)
+        data = mtx.ravel()
+
     # Calculate the number of values to select
-    total_values = len(mtx.data)
+    total_values = len(data)
     values_to_select = int(percentage / 100 * total_values)
 
     # Get a random sample of indices to select using numpy
     selected_indices = np.random.choice(total_values, values_to_select, replace=False)
 
     # Subtract 1 from the values at selected indices
-    mtx.data[selected_indices] -= 1
-    
+    data[selected_indices] -= 1
+
     # Set all values below 0 to 0
-    mtx.data[mtx.data < 0] = 0
+    data[data < 0] = 0
     
     new_adata = adata.copy()
     new_adata.X = mtx

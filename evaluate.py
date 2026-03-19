@@ -11,15 +11,15 @@ from utils import scanpy_setup
 from utils import sample_and_merge_control_random, remove_groups, subsample, generate_sparsity
 from utils import inplace_check
 
-np.random.seed(0)
-
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--save_file", type=str, default='test.pkl', required=True)
 parser.add_argument("--dataset", type=str, default='', required=True)
+parser.add_argument("--dir", type=str, default='', required=False)
 parser.add_argument("--test_mode", dest='test_mode', default=False, action='store_true')  # evaluate on subset
 parser.add_argument("--eval_mode", dest='eval_mode', default=False, action='store_true')  # run bare min needed for table
 parser.add_argument("--with_DEGs", dest='with_DEGs', default=False, action='store_true')  # add DEGs on lognorm to run
+parser.add_argument("--seed", type=int, default=0)
 
 ### Note that the default mode, without any flags, runs hvgs, ncells, and
 ### libsize across lognorm, counts, and pca representations.
@@ -29,11 +29,12 @@ args = parser.parse_args()
 test_mode = args.test_mode
 eval_mode = args.eval_mode
 with_DEGs = args.with_DEGs
-dss_path = '/lustre/scratch/users/yuge.ji/metrics/with_add_metrics_final'
 save_file = args.save_file
 if eval_mode: save_file += '_sub'
 
-controls = ['control0', 'control1', 'control2', 'control3', 'control4']
+dir = args.dir
+dss_path = f'/lustre/scratch/users/yuge.ji/metrics/{dir}'
+
 metrics = ['euclidean', 'spearman_distance', 'mean_absolute_error']  # representative
 metrics += ['r2_distance', 'pearson_distance', 'mse', 'cosine_distance']  # fast
 metrics += ['edistance', 'sym_kldiv', 'mmd', 'mmd_rbf', 'ks_test', 't_test', 'wasserstein'] # slow
@@ -76,7 +77,7 @@ elif args.dataset == 'mcfarland':
     adata.obs['perturbation'] = adata.obs['perturbation'].astype(str) + '_' + adata.obs.time.astype(str)
     adata.obs['perturbation'] = adata.obs.perturbation.replace({'control_24':'control', 'control_6':'control'})
 
-    n_min_cells = 100
+    n_min_cells = 100  # just enough to split control 5 ways (541 cells)
 elif args.dataset == 'schiebinger':
     adata = pt.data.schiebinger_2019_18day()
     # take only the Dox and control conditions, representing full, "normal" reprogramming
@@ -91,7 +92,7 @@ elif args.dataset == 'garcia':
     adata = adata[adata.obs.cell_type == 'Ovarian interstitial cells']
     adata.obs['perturbation'] = adata.obs.age.replace({8.6:'control'}).astype(str)
 
-    n_min_cells = 300
+    n_min_cells = 300  # just enough to split control 5 ways (1784 cells)
 elif args.dataset == 'satinha':
     adata = sc.read('./data/SantinhaPlatt2023_GSE236519_pooled_screen_CBh_temp.h5ad')
 
@@ -127,7 +128,6 @@ if test_mode:
     save_file = 'test.pkl'
     n_min_cells = int(n_min_cells/8)
 
-
 ### metric runs ###
 scanpy_setup(adata)
 try:
@@ -136,7 +136,11 @@ except AttributeError:  # handle non-matrices
     adata.obs['ncounts'] = adata.X.sum(axis=1)
 
 # set filtered adata used for all runs
-merged = sample_and_merge_control_random(adata, 'control', n=5)
+# note this adjusting the number of control subsamples is hardcoded because
+# adjusting you would also need to adjust min_cells per dataset above.
+n_controls = 5
+merged = sample_and_merge_control_random(adata, 'control', n=n_controls)
+controls = [f'control{i}' for i in range(n_controls)]
 filtered = remove_groups(merged, min_cells=n_min_cells)
 
 print(filtered, flush=True)
@@ -172,7 +176,7 @@ for rep in ['lognorm', 'counts', 'pca']:
     sc.pp.highly_variable_genes(adata, n_top_genes=2000)
 
     for n, features in feature_subsets.items():
-        subset = subsample(filtered, n_min_cells)[:, features]
+        subset = subsample(filtered, n_min_cells, random_state=args.seed)[:, features]
         inplace_check(metrics, results, DistanceResult(subset, controls, str(n), rep, 'n_genes'))
 
     if eval_mode:  # we only need one of the metric runs to evaluate on a new dataset
@@ -180,11 +184,10 @@ for rep in ['lognorm', 'counts', 'pca']:
 
     ### n_cells ###
     print('running n_cells', flush=True)
-    max_n_cells = n_min_cells if n_min_cells < 400 else 400
-    experiment_condi = list(range(100, max_n_cells+10, 50)) + [max_n_cells]
+    experiment_condi = [10, 20, 30, 50, 70, 100]
 
     for ncell in experiment_condi:
-        subset = subsample(filtered, ncell)[:, adata.var['highly_variable']]
+        subset = subsample(filtered, ncell, random_state=args.seed)[:, adata.var['highly_variable']]
         inplace_check(metrics, results, DistanceResult(subset, controls, str(ncell), rep, 'n_cells'))
 
 
@@ -195,7 +198,7 @@ for rep in ['lognorm', 'counts', 'pca']:
     for perc in experiment_condi:
         subset = generate_sparsity(
             adata[:, adata.var['highly_variable']],
-            subsample(filtered, n_min_cells).obs,
+            subsample(filtered, n_min_cells, random_state=args.seed).obs,
             perc
         )
         count_mean = subset.layers['counts'].mean()
@@ -218,14 +221,12 @@ for rep in ['lognorm', 'counts', 'pca']:
             reference='control',
             rankby_abs=True
         )
-        subset = subsample(filtered, n_min_cells)
+        subset = subsample(filtered, n_min_cells, random_state=args.seed)
         subset.uns = filt_wctrl.uns # using a new adata which does not have the 'control' condition
 
         for n in experiment_condi:
             subset.uns['n_genes'] = n
             inplace_check(metrics, results, DistanceResult(subset, controls, str(n), rep, 'n_DEGs'))
-
-#        break  # temporary for runtime, run only lognorm for everything
         
 print('finished with', results.keys(), flush=True)
 print('added keys:', set(results.keys())-current_keys, flush=True)

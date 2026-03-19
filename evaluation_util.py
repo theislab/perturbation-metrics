@@ -46,13 +46,44 @@ def plot(results, tags, plot=True):
     
     return pwdfs, ctrl_ranks
 
-def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distance='mean_absolute_error', rep='lognorm'):
-    exp = 'n_genes'
+def evaluate_on_dataset(
+    results,
+    annotate_fn,
+    ground_truth_label,
+    optimal_distance='mean_absolute_error',
+    rep='lognorm',
+    exp='n_genes',
+    numeric_value='2000',
+    plot_performance=True
+    ):
+    """
+    Computes evaluation metrics for a given dataset and experimental settings.
+
+    Note that rep, exp and numeric_value must exist in the key string of the results dictionary.
+
+    Parameters
+    ----------
+    results : dict
+        Dictionary of DistanceResult objects.
+    annotate_fn : function
+        Function to annotate the dataframe with additional information.
+    ground_truth_label : str
+        Label of the ground truth metric.
+    optimal_distance : str
+        Name of a distance to use as reference for plotting the lineplot. 
+        Choose the best performing distance for clearest visuals.
+    rep : str
+        Representation of the data, one of 'lognorm', 'counts', 'pca'.
+    exp : str
+        Experimental setting which was varied, one of 'n_genes', 'n_cells', 'libsize'.
+    numeric_value : str
+        Numeric value of the experimental setting. 
+    """
     metrics = list(results.values())[0].metrics
     controls = ['control0', 'control1', 'control2', 'control3', 'control4']
 
-    pwdfs, ctrl_ranks = plot(results, [exp, rep, '2000'], plot=False)
-    df = get_melted_df_per_perturbation(pwdfs, metrics, controls, exp, reference=f'{optimal_distance}-2000')
+    pwdfs, ctrl_ranks = plot(results, [exp, rep, numeric_value], plot=False)
+    df = get_melted_df_per_perturbation(pwdfs, metrics, controls, exp, reference=f'{optimal_distance}-{numeric_value}')
     annotate_fn(df)
     df = df[df.is_control == 'perturbation']
     
@@ -64,31 +95,31 @@ def evaluate_on_dataset(results, annotate_fn, ground_truth_label, optimal_distan
 #    corr_wreal[0] = 1 - corr_wreal[0]  # flip so smaller is better
     corr_wreal.columns = [f'corr_{ground_truth_label}']
 
-    # add in rank dataframe
-    avg_rank, var_rank = perf_df(results, rep=rep)
+    # add in rank dataframe (must use same exp/numeric_value for sensitivity/robustness)
+    avg_rank, var_rank = perf_df(results, rep=rep, exp=exp, numeric_value=numeric_value)
     avg_rank = 1-avg_rank
     var_rank = 1-var_rank
     results = pd.concat([avg_rank, var_rank, corr_wreal], axis=1).sort_values(by=f'corr_{ground_truth_label}')
 
-    # dataframe plot (not customizeable)
-    plt.figure(figsize=(5, 5))
-    sns.heatmap(results, annot=True, cmap='gist_heat', fmt=".3f", linewidths=.5, cbar_kws={'label': 'relative values'})
-    plt.grid(None)
-    plt.show()
+    if plot_performance:
+        # dataframe plot (not customizeable)
+        plt.figure(figsize=(5, 5))
+        sns.heatmap(results, annot=True, cmap='gist_heat', fmt=".3f", linewidths=.5, cbar_kws={'label': 'relative values'})
+        plt.grid(None)
+        plt.show()
 
-    # lineplot (customizeable)
-    normed_df = normalize_per_metric(df, label='distance')
-    plt.figure(figsize=(10, 5))
-    sns.lineplot(data=normed_df, x='rank', y='distance', hue='metric', alpha=.5)
-    sns.scatterplot(data=normed_df, x='rank', y='distance', hue=ground_truth_label, style='is_control')
-    plt.legend(bbox_to_anchor=(1.01, 1.05))
+        # lineplot (customizeable)
+        normed_df = normalize_per_metric(df, label='distance')
+        plt.figure(figsize=(10, 5))
+        sns.lineplot(data=normed_df, x='rank', y='distance', hue='metric', alpha=.5)
+        sns.scatterplot(data=normed_df, x='rank', y='distance', hue=ground_truth_label, style='is_control')
+        plt.legend(bbox_to_anchor=(1.01, 1.05))
 
     return results
 
-def perf_df(results, rep='lognorm'):
-    exp = 'n_genes'
-    pwdfs, ctrl_ranks = plot(results, [exp, rep], plot=False)
-    best_case = ctrl_ranks[ctrl_ranks[exp] == '2000']
+def perf_df(results, rep='lognorm', exp='n_genes', numeric_value='2000'):
+    pwdfs, ctrl_ranks = plot(results, [exp, rep, str(numeric_value)], plot=False)
+    best_case = ctrl_ranks[ctrl_ranks[exp].astype(str) == str(numeric_value)]
 
     avg_rank = best_case[['rank', 'metric']].groupby('metric').mean().sort_values('rank')
     avg_rank.columns = ['sensitivity']
