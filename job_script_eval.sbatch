@@ -28,8 +28,7 @@ settings=(
 
 source activate pertpy_clean2
 python evaluate.py \
-    --seed=2026 \
-    --dir="seed_2026" \
     --save_file=$(echo ${settings[$SLURM_ARRAY_TASK_ID]} | cut -d' ' -f1) \
     --dataset=$(echo ${settings[$SLURM_ARRAY_TASK_ID]} | cut -d' ' -f2) \
+    --n_random_states=25 \
     --eval_mode
