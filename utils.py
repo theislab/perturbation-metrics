@@ -183,11 +183,11 @@ def generate(cond, train, min_cells=500):
 
     return new_train
 
-def inplace_check(metrics, results, res, recompute=False):
+def inplace_check(metrics, results, res, adata_list=None, recompute=False):
     if res.res_string in results and not recompute:
         res = results[res.res_string]
 
-    res.compute_pwdf(metrics, recompute=recompute)
+    res.compute_pwdf(metrics, adata_list=adata_list, recompute=recompute)
     results[res.res_string] = res
 
 ## Calculating pairwise dfs
