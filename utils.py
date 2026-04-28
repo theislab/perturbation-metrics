@@ -388,7 +388,7 @@ def add_rank_col(df, single_metric_df, sort_per_control=True):
 
     Control rankings are assigned without counting other controls as conditions.
     """
-    rank_df = single_metric_df.sort_values(by=0).reset_index().reset_index()
+    rank_df = single_metric_df.drop('control').sort_values(by=0).reset_index().reset_index()
     rank_dict = dict(zip(rank_df['perturbation'], rank_df['index']))
     df['rank'] = df['perturbation'].map(rank_dict)
     
@@ -502,9 +502,11 @@ def calc_rank_percentile(ind_ranked, target='control'):
     """
     if type(target) is str:
         target_ranks = ind_ranked[ind_ranked.perturbation == target]
+        n_controls = 1
     else:
         target_ranks = ind_ranked[ind_ranked.perturbation.isin(target)]
-    target_ranks['rank'] = target_ranks['rank']/len(ind_ranked.perturbation.unique())
+        n_controls = len(target)
+    target_ranks['rank'] = target_ranks['rank']/(len(ind_ranked.perturbation.unique()) - n_controls)
     target_ranks = target_ranks.reset_index().drop(columns=['index'])
     return target_ranks
 
